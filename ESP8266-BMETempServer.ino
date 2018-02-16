@@ -6,20 +6,30 @@
    Forward ports 8888 - 8890 to this ip in your router to access remotely.
 */
 
+// Misc Configuration Definitions
+#define USE_BME 1
+#define USE_BMP 0
+#define FORMAT_SPIFFS 0
+
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-//#include <Adafruit_BMP085.h>
+#if (USE_BMP)
+#include <Adafruit_BMP085.h>
+#endif
+#if (USE_BME)
 #include <Adafruit_BME280.h>
+#endif
 #include <FS.h>
 #include <WebSocketsServer.h> // Version vom 20.05.2015 https://github.com/Links2004/arduinoWebSockets
 #include <PrintEx.h>
 
 StreamEx stream = Serial;
 using namespace ios;
+
 #define DBG_OUTPUT_PORT Serial
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -30,8 +40,8 @@ const char* host = "esp8266-weather";
 const char* update_path = "/update";
 const char* update_username = "daniel";
 const char* update_password = "jnco";
-const char *ssid = "fkyall";
-const char *password = "%%jnco5626%%";
+const char *ssid = "";
+const char *password = "";
 
 const char thingSpeakAddress[] = "api.thingspeak.com";
 String APIKey = "EX2W4F4J2DBU9O90";  //enter your channel's Write API Key
@@ -41,8 +51,13 @@ long lastConnectionTime = 0;
 boolean lastConnected = false;
 WiFiClient client;
 
-//Adafruit_BMP085 bmp;
+#if (USE_BMP)
+Adafruit_BMP085 bmp;
+#endif
+#if (USE_BMP)
 Adafruit_BME280 bme;
+#endif
+
 bool metric = false;
 String temp_str, alt_str, pres_str;
 
@@ -138,6 +153,7 @@ void handleFileDelete() {
 void handleFileCreate() {
   if (server.args() == 0)
     return server.send(500, "text/plain", "BAD ARGS");
+
   String path = server.arg(0);
   DBG_OUTPUT_PORT.println("handleFileCreate: " + path);
   if (path == "/")
@@ -185,26 +201,17 @@ void handleFileList() {
 
 const char HEAD_BEGIN[] PROGMEM = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"utf-8\"/>\r\n<meta http-equiv=\"refresh\" content=\"21600\">\r\n";
 
-const char WEBSOCKET_SCRIPT[] PROGMEM = "<script>\r\nvar connection = new WebSocket('ws://'+location.hostname+':8889/', ['arduino']);\r\n"
-                                        "connection.onmessage = function(e){\r\n"
-                                        " console.log('Server: ', e.data);\r\n"
+const char WEBSOCKET_SCRIPT[] PROGMEM = "<script>\r\n var connection = new WebSocket('ws://'+location.hostname+':8889/', ['arduino']);\r\n"
+                                        "connection.onmessage = function(e){\r\n console.log('Server: ', e.data);\r\n"
                                         " if(e.data.slice(0,2)==\"1:\") document.getElementById('ActUptime').value = e.data.slice(2);\r\n"
                                         " if(e.data.slice(0,2)==\"2:\") document.getElementById('ActTemp').value = e.data.slice(2);\r\n"
                                         " if(e.data.slice(0,2)==\"3:\") document.getElementById('ActAlt').value = e.data.slice(2);\r\n"
                                         " if(e.data.slice(0,2)==\"4:\") document.getElementById('ActPres').value = e.data.slice(2);\r\n }\r\n"
-                                        "connection.onclose = function(){\r\n"
-                                        " console.log('closed!');\r\n"
-                                        " check();\r\n}\r\n"
-                                        "function check(){\r\n"
-                                        " if(!connection || connection.readyState==3)\r\n"
-                                        " setInterval(check,5000);\r\n}\r\n"
-                                        "</script>\r\n";
-const char STYLE[] PROGMEM = "<style>\r\nbody { background-color: #000000; font-family: Arial, Helvetica, Sans-Serif; Color: #ffffff; } "
-                             "a { text-decoration: none; color: #d3d3d3; }\r\n</style>\r\n";
+                                        "connection.onclose = function(){\r\n console.log('closed!');\r\n check();\r\n}\r\n function check(){\r\n if(!connection || connection.readyState==3)\r\n setInterval(check,5000);\r\n}\r\n</script>\r\n";
+const char STYLE[] PROGMEM = "<style>\r\n body { background-color: #000000; font-family: Arial, Helvetica, Sans-Serif; Color: #ffffff; } a{ text-decoration: none; color: #d3d3d3; }\r\n</style>\r\n";
 const char TITLE[] PROGMEM = "<title>[TITLE]</title>\r\n";
 const char HEAD_END[] PROGMEM = "</head>\r\n";
 
-//-----------------------------------------------------WEBPAGE HTTP ROOT---------------------------------------------------
 void http_root() {
   String sResponse;
   sResponse = FPSTR(HEAD_BEGIN);
@@ -214,60 +221,38 @@ void http_root() {
   sResponse.replace("[TITLE]", "Home Weather Station");
   sResponse += FPSTR(STYLE);
   sResponse += FPSTR(HEAD_END);
-  sResponse += "<body>\r\n"
-               "<center>\r\n"
-               "<table><tbody><tr>\r\n"
+  sResponse += "<body>\r\n<center>\r\n<table><tbody><tr>\r\n"
                "<td colspan = \"3\" align=\"center\"><a href=\"history.html\" target=\"_new\">Temperature<br></a><font size=\"+4\"><output name=\"ActTemp\" id=\"ActTemp\"></output> &deg;F</font><p></td>\r\n"
                "</tr><tr><td align=\"left\"><a href=\"history.html\" target=\"_new\">Altitude<br></a><font size=\"+2\"><output name=\"ActAlt\" id=\"ActAlt\"></output> meters</font><p></td>\r\n"
                "<td align=\"right\"><a href=\"history.html\" target=\"_new\">Pressure<br></a><font size=\"+2\">"
-               "<output name=\"ActPres\" id=\"ActPres\"></output> pascal</font><p></td>\r\n"
-               "</tr>"
-               "<tr><td colspan=\"3\" align=\"center\">Uptime: <output name=\"ActUptime\" id=\"ActUptime\"></output><p></td>\r\n"
-               "</tr>"
-               "<tr width=\"250\"><td colspan=\"3\"><div style='width: 300px; overflow: auto;'>\r\n"
-               "<a href=\"https://www.weatherforyou.com/weather/tx/new%20braunfels.html\" target=\"_new\">\r\n"
+               "<output name=\"ActPres\" id=\"ActPres\"></output> pascal</font><p></td>\r\n</tr>"
+               "<tr><td colspan=\"3\" align=\"center\">Uptime: <output name=\"ActUptime\" id=\"ActUptime\"></output><p></td>\r\n</tr>"
+               "<tr width=\"250\"><td colspan=\"3\"><div style='width: 300px; overflow: auto;'>\r\n<a href=\"https://www.weatherforyou.com/weather/tx/new%20braunfels.html\" target=\"_new\">\r\n"
                "<img src=\"https://www.weatherforyou.net/fcgi-bin/hw3/hw3.cgi?config=png&forecast=zone&alt=hwizone7day5&place=new%20braunfels&state=tx&country=us&hwvbg=black&hwvtc=white&hwvdisplay=&daysonly=2&maxdays=7\" width=\"500\" height=\"200\" border=\"0\" alt=\"new%20braunfels, tx, weather forecast\"></a>\r\n"
-               "</div></td>"
-               "</tr>\r\n"
-               "</tbody>"
-               "</table>\r\n"
-               "</body>\r\n"
-               "</html>\r\n";
+               "</div></td></tr>\r\n</tbody></table>\r\n</body>\r\n</html>\r\n";
   server.send ( 200, "text/html", sResponse );
-  stream << "Client disonnected" << endl;;
+  stream << F("Client disconnected") << endl;;
 }
 
-//------------------------------------------------------WEBPAGE HTTP HISTORY-------------------------------------------------
 void http_history() {
   String sResponse;
   sResponse = FPSTR(HEAD_BEGIN);
   sResponse += FPSTR(HEAD_END);
-  sResponse += "<body>"
-               "<center>\r\n"
-               "<button type=\"button\" onclick=\"javascript:window.close()\">  Close Window  </button><br><br>\r\n"
-               "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\""
-               " src=\"https://thingspeak.com/channels/126450/charts/1?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Temperature&type=line\">"
-               "</iframe><br>\r\n"
-               "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\""
-               " src=\"https://thingspeak.com/channels/126450/charts/2?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Altitude&type=line\">"
-               "</iframe><br>\r\n"
-               "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\""
-               " src=\"https://thingspeak.com/channels/126450/charts/3?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Pressure&type=line\">"
-               "</iframe>\r\n"
-               "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/maps/channel_show\">"
-               "</iframe>\r\n"
-               "</body>\r\n"
-               "</html>\r\n";
+  sResponse += "<body><center>\r\n<button type=\"button\" onclick=\"javascript:window.close()\"> &nbsp Close Window &nbsp </button><br><br>\r\n"
+               "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/1?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Temperature&type=line\"></iframe><br>\r\n"
+               "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/2?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Altitude&type=line\"></iframe><br>\r\n"
+               "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/3?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Pressure&type=line\"></iframe>\r\n"
+			   "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/maps/channel_show\"></iframe>\r\n</body>\r\n</html>\r\n";
   server.send ( 200, "text/html", sResponse );
-  stream << "Client disonnected" << endl;
+  stream << F("Client disconnected") << endl;
 }
 
-//--------------------------------------------------------Websocket Event----------------------------------------------------
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght) {
 
   switch (type) {
     case WStype_DISCONNECTED:
-      stream.printf("[%u] Disconnected!\n", num);
+      // stream.printf("[%u] Disconnected!\n", num);
+      stream << '[' << num << F("] Disconnected!") << endl;
       webSocket.disconnect(num);
       break;
 
@@ -307,13 +292,25 @@ void handleNotFound() {
   server.send( 404, "text/plain", message );
 }
 
+#if (USE_BME)
 void bmeSample() {
   float temp(NAN), alt(NAN), pres(NAN);
   temp = (bme.readTemperature() * 1.8 + 32.0),  pres = ((bme.readPressure() / 1000.0) * 1.45038), alt = (bme.readAltitude(SEALEVELPRESSURE_HPA) * 3.281);
   temp_str = (temp), alt_str = (alt), pres_str = (pres);
   temp_str = temp_str.substring(0, temp_str.length() - 1), alt_str = alt_str.substring(0, alt_str.length() - 1); //, pres_str = pres_str.substring(0, pres_str.length() - 1);
-  stream << "Temperature: " << temp_str << "F" << endl << "Altitude: " << alt_str << "m" << endl << "Pressure: " << pres_str << "pas" << endl;
+  stream << F("Temperature: ") << temp_str << 'F' << endl << F("Altitude: ") << alt_str << 'm' << endl << F("Pressure: ") << pres_str << F("pas") << endl;
 }
+#endif
+
+#if (USE_BMP)
+void bmPSample() {
+  float temp(NAN), alt(NAN), pres(NAN);
+  temp = (bmp.readTemperature() * 1.8 + 32.0),  pres = ((bmp.readPressure() / 1000.0) * 1.45038), alt = (bmp.readAltitude(SEALEVELPRESSURE_HPA) * 3.281);
+  temp_str = (temp), alt_str = (alt), pres_str = (pres);
+  temp_str = temp_str.substring(0, temp_str.length() - 1), alt_str = alt_str.substring(0, alt_str.length() - 1); //, pres_str = pres_str.substring(0, pres_str.length() - 1);
+  stream << F("Temperature: ") << temp_str << 'F' << endl << F("Altitude: ") << alt_str << 'm' << endl << F("Pressure: ") << pres_str << F("pas") << endl;
+}
+#endif
 
 void updateThingSpeak(String tsData) {
   if (client.connect(thingSpeakAddress, 80)) {
@@ -352,21 +349,22 @@ void thingSpeak() {
   lastConnected = client.connected();
 }
 
-void setup ( void ) {
-  Serial.begin(9600);
-  stream << "Trying wifi config" << endl;
-  WiFi.begin(ssid, password);
-  uint8_t i = 0;
-  while ( WiFi.status() != WL_CONNECTED && i < 10) {
-    delay (500);
-    stream << ".";
-    i++;
-  }
-	stream << endl << "Connected to " << ssid << endl;
+void setup(void) {
+	Serial.begin(9600);
+	stream << F("Trying wifi config") << endl;
+	WiFi.begin(ssid, password);
+	uint8_t i = 0;
+	while ( WiFi.status() != WL_CONNECTED && i < 10) {
+		delay (500);
+		stream << ".";
+		i++;
+	}
+	stream << endl << F("Connected to ") << ssid << endl;
 	Serial.println(ssid);
-	stream << "IP address: " << getipstr() << endl;
+	stream << F("IP address: ") << getipstr() << endl;
 	Serial.println(WiFi.localIP(), HEX);
-	stream << "Own MAC: "; Serial.println(WiFi.macAddress());
+	stream << F("Own MAC: "); 
+	Serial.println(WiFi.macAddress());
 
   //START WEBSERVER UPGRADE
   MDNS.begin(host);
@@ -376,10 +374,10 @@ void setup ( void ) {
 
   MDNS.addService("http", "tcp", 8890);
   //Print the IP Address
-   stream << "Use this URL to connect: " << "http://";
-  Serial.print(WiFi.localIP());
+   stream << F("Use this URL to connect: http://");
+   stream.print(WiFi.localIP());
    stream << getipstr();
-   stream << ":8890" << "/update" << endl;
+   stream << F(":8890/update") << endl;
 
   // ------------------------------------------------------Arduino OTA------------------------------------------------------
   // Port defaults to 8266
@@ -415,10 +413,12 @@ void setup ( void ) {
   ArduinoOTA.begin();
 
   SPIFFS.begin();
-  //SPIFFS.format(); // only uncomment if you want to format SPIFFS.  After flashing run once and then comment back.
+  
+#if (FORMAT_SPIFFS)
+  SPIFFS.format(); // only uncomment if you want to format SPIFFS.  After flashing run once and then comment back.
+#endif
 
   //-------------------------------------------- SERVER HANDLES -------------------------------------------------------
-  //SERVER INIT
   //list directory
   server.on("/list", HTTP_GET, handleFileList);
 
@@ -457,28 +457,39 @@ void setup ( void ) {
   });
   server.begin();
 
-  //  stream << "HTTP server started" << endl;
+  stream << F("HTTP server started") << endl;
 
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
-  //  stream << "Socket server started" << endl;
+  stream << F("Socket server started") << endl;
 
-  //  stream << "BMP085 test" << endl;
-
+#if (USE_BME)
   if (!bme.begin()) {
-    stream << "Could not find a valid BMP sensor, check wiring!" << endl;
+    stream << F("Could not find a valid BMP sensor, check wiring!") << endl;
     delay(1000);
   }
+#endif
+#if (USE_BMP)
+  stream << F("BMP085 test") << endl;
+  if (!bme.begin()) {
+    stream << F("Could not find a valid BMP sensor, check wiring!") << endl;
+    delay(1000);
+  }
+#endif
 }
 
-void loop ( void ) {
+void loop(void) {
   server.handleClient();
   ArduinoOTA.handle();
   httpServer.handleClient();
   webSocket.loop();
   thingSpeak();
+#if (USE_BME)
   bmeSample();
-
+#endif
+#if (USE_BMP)
+	bmpSample();
+#endif
   if (time_poll <= millis()) {
     int sec = millis() / 1000,
         min = sec / 60,
@@ -497,7 +508,8 @@ void loop ( void ) {
 
 char *getipstr(void) {
   static char cOut[20];
-  IPAddress ip = WiFi.localIP();                  // the IP address of your esp
+  IPAddress ip = WiFi.localIP(); // the IP address of your esp
   sprintf(cOut, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]); //also pseudocode.
   return cOut;
 }
+
