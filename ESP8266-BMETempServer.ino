@@ -1,9 +1,10 @@
+
 /* Home Weather Station
-   Connect to a WiFi network and provide a web server on it so show Temperature, Humidity, Dew Point, Pressure, and Uptime as well as a forecast widget from weatherforyou.com.
-   Connect to http://ip:8890/update for webpage updater.
-   History.html is hosted on another server.
-   Webpage auto refreshes every 6 hours to update the forecast widget.  (websocket or ajax would be nice here as well)
-   Forward ports 8888 - 8890 to this ip in your router to access remotely.
+  Connect to a WiFi network and provide a web server on it so show Temperature, Humidity, Dew Point, Pressure, and Uptime as well as a forecast widget from weatherforyou.com.
+  Connect to http://ip:8890/update for webpage updater.
+  History.html is hosted on another server.
+  Webpage auto refreshes every 6 hours to update the forecast widget.  (websocket or ajax would be nice here as well)
+  Forward ports 8888 - 8890 to this ip in your router to access remotely.
 */
 
 // Misc Configuration Definitions
@@ -22,6 +23,7 @@
 #endif
 #if (USE_BME)
 #include <Adafruit_BME280.h>
+#define SEALEVELPRESSURE_HPA (1013.25)
 #endif
 #include <FS.h>
 #include <WebSocketsServer.h> // Version vom 20.05.2015 https://github.com/Links2004/arduinoWebSockets
@@ -31,7 +33,7 @@ StreamEx stream = Serial;
 using namespace ios;
 
 #define DBG_OUTPUT_PORT Serial
-#define SEALEVELPRESSURE_HPA (1013.25)
+
 
 char *getipstr(void);
 void setupAP(void);
@@ -54,7 +56,7 @@ WiFiClient client;
 #if (USE_BMP)
 Adafruit_BMP085 bmp;
 #endif
-#if (USE_BMP)
+#if (USE_BME)
 Adafruit_BME280 bme;
 #endif
 
@@ -101,6 +103,9 @@ String getContentType(String filename) {
   return "text/plain";
 }
 
+/********************************************
+ ***  METHOD HANDLES FOR THE WEBSERVER  ****
+ *******************************************/
 bool handleFileRead(String path) {
   DBG_OUTPUT_PORT.println("handleFileRead: " + path);
   if (path.endsWith("/")) path += "index.htm";
@@ -216,9 +221,9 @@ void http_root() {
   String sResponse;
   sResponse = FPSTR(HEAD_BEGIN);
   sResponse += FPSTR(WEBSOCKET_SCRIPT);
-  sResponse.replace("[IP]", getipstr());
+  sResponse.replace(F("[IP]"), getipstr());
   sResponse += FPSTR(TITLE);
-  sResponse.replace("[TITLE]", "Home Weather Station");
+  sResponse.replace(F("[TITLE]"), F("ESP8266 Home Weather Station"));
   sResponse += FPSTR(STYLE);
   sResponse += FPSTR(HEAD_END);
   sResponse += "<body>\r\n<center>\r\n<table><tbody><tr>\r\n"
@@ -242,7 +247,7 @@ void http_history() {
                "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/1?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Temperature&type=line\"></iframe><br>\r\n"
                "<iframe width=\"500\" height=\"300\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/2?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Altitude&type=line\"></iframe><br>\r\n"
                "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/charts/3?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=40&title=Pressure&type=line\"></iframe>\r\n"
-			   "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/maps/channel_show\"></iframe>\r\n</body>\r\n</html>\r\n";
+               "<iframe width=\"450\" height=\"260\" style=\"border: 1px solid #cccccc;\" src=\"https://thingspeak.com/channels/126450/maps/channel_show\"></iframe>\r\n</body>\r\n</html>\r\n";
   server.send ( 200, "text/html", sResponse );
   stream << F("Client disconnected") << endl;
 }
@@ -280,13 +285,13 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
 }
 
 void handleNotFound() {
-  String message = "File Not Found\n\nURI: ";
+  String message = F("File Not Found\n\nURI: ");
   message += server.uri();
-  message += "\nMethod: ";
+  message += F("\nMethod: ");
   message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
-  message += "\nArguments: ";
+  message += F("\nArguments: ");
   message += server.args();
-  message += "\n";
+  message += F("\n");
   for ( uint8_t i = 0; i < server.args(); i++ )
     message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
   server.send( 404, "text/plain", message );
@@ -314,19 +319,19 @@ void bmPSample() {
 
 void updateThingSpeak(String tsData) {
   if (client.connect(thingSpeakAddress, 80)) {
-    client.print("POST /update HTTP/1.1\n");
-    client.print("Host: api.thingspeak.com\n");
-    client.print("Connection: close\n");
+    client.print(F("POST /update HTTP/1.1\n"));
+    client.print(F("Host: api.thingspeak.com\n"));
+    client.print(F("Connection: close\n"));
     client.print("X-THINGSPEAKAPIKEY: " + APIKey + "\n");
-    client.print("Content-Type: application/x-www-form-urlencoded\n");
-    client.print("Content-Length: ");
+    client.print(F("Content-Type: application/x-www-form-urlencoded\n"));
+    client.print(F("Content-Length: "));
     client.print(tsData.length());
-    client.print("\n\n");
+    client.print(F("\n\n"));
     client.print(tsData);
     lastConnectionTime = millis();
 
     if (client.connected())
-      stream << "Connecting to ThingSpeak..." << endl << endl;
+      stream << F("Connecting to ThingSpeak...") << endl << endl;
   }
 }
 
@@ -339,7 +344,7 @@ void thingSpeak() {
 
   // Disconnect from ThingSpeak
   if (!client.connected() && lastConnected) {
-    stream << "...disconnected" << endl << endl;
+    stream << F("...disconnected") << endl << endl;
     client.stop();
   }
 
@@ -350,21 +355,21 @@ void thingSpeak() {
 }
 
 void setup(void) {
-	Serial.begin(9600);
-	stream << F("Trying wifi config") << endl;
-	WiFi.begin(ssid, password);
-	uint8_t i = 0;
-	while ( WiFi.status() != WL_CONNECTED && i < 10) {
-		delay (500);
-		stream << ".";
-		i++;
-	}
-	stream << endl << F("Connected to ") << ssid << endl;
-	Serial.println(ssid);
-	stream << F("IP address: ") << getipstr() << endl;
-	Serial.println(WiFi.localIP(), HEX);
-	stream << F("Own MAC: "); 
-	Serial.println(WiFi.macAddress());
+  Serial.begin(9600);
+  stream << F("Trying wifi config") << endl;
+  WiFi.begin(ssid, password);
+  uint8_t i = 0;
+  while ( WiFi.status() != WL_CONNECTED && i < 10) {
+    delay (500);
+    stream << ".";
+    i++;
+  }
+  stream << endl << F("Connected to ") << ssid << endl;
+  Serial.println(ssid);
+  stream << F("IP address: ") << getipstr() << endl;
+  Serial.println(WiFi.localIP(), HEX);
+  stream << F("Own MAC: ");
+  Serial.println(WiFi.macAddress());
 
   //START WEBSERVER UPGRADE
   MDNS.begin(host);
@@ -374,10 +379,10 @@ void setup(void) {
 
   MDNS.addService("http", "tcp", 8890);
   //Print the IP Address
-   stream << F("Use this URL to connect: http://");
-   stream.print(WiFi.localIP());
-   stream << getipstr();
-   stream << F(":8890/update") << endl;
+  stream << F("Use this URL to connect: http://");
+  stream.print(WiFi.localIP());
+  stream << getipstr();
+  stream << F(":8890/update") << endl;
 
   // ------------------------------------------------------Arduino OTA------------------------------------------------------
   // Port defaults to 8266
@@ -390,30 +395,30 @@ void setup(void) {
   // ArduinoOTA.setPassword((const char *)"123");
 
   ArduinoOTA.onStart([]() {
-       stream << "Start" << endl;
+    stream << F("Start") << endl;
   });
 
   ArduinoOTA.onEnd([]() {
-       stream << endl << "End" << endl;
+    stream << endl << F("End") << endl;
   });
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-       stream.printf("Progress: %u%%\r", (progress / (total / 100)));
+    stream.printf("Progress: %u%%\r", (progress / (total / 100)));
   });
 
   ArduinoOTA.onError([](ota_error_t error) {
-       stream.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) stream << "Auth Failed" << endl;
-    else if (error == OTA_BEGIN_ERROR) stream << "Begin Failed" << endl;
-    else if (error == OTA_CONNECT_ERROR) stream << "Connect Failed" << endl;
-    else if (error == OTA_RECEIVE_ERROR) stream << "Receive Failed" << endl;
-    else if (error == OTA_END_ERROR) stream << "End Failed" << endl;
+    stream.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) stream << F("Auth Failed") << endl;
+    else if (error == OTA_BEGIN_ERROR) stream << F("Begin Failed") << endl;
+    else if (error == OTA_CONNECT_ERROR) stream << F("Connect Failed") << endl;
+    else if (error == OTA_RECEIVE_ERROR) stream << F("Receive Failed") << endl;
+    else if (error == OTA_END_ERROR) stream << F("End Failed") << endl;
   });
 
   ArduinoOTA.begin();
 
   SPIFFS.begin();
-  
+
 #if (FORMAT_SPIFFS)
   SPIFFS.format(); // only uncomment if you want to format SPIFFS.  After flashing run once and then comment back.
 #endif
@@ -439,7 +444,7 @@ void setup(void) {
     server.send(200, "text/plain", "");
   }, handleFileUpload);
 
-   // server.on("/", http_root);
+  // server.on("/", http_root);
 
   server.on("/", HTTP_GET, []() {
     if (!handleFileRead("/index.htm")) server.send(404, "text/plain", "FileNotFound");
@@ -484,17 +489,17 @@ void loop(void) {
   httpServer.handleClient();
   webSocket.loop();
   thingSpeak();
+
 #if (USE_BME)
   bmeSample();
 #endif
+
 #if (USE_BMP)
-	bmpSample();
+  bmpSample();
 #endif
+
   if (time_poll <= millis()) {
-    int sec = millis() / 1000,
-        min = sec / 60,
-        hr = min / 60,
-        day = hr / 24;
+    int sec = millis() / 1000, min = sec / 60, hr = min / 60, day = hr / 24;
     char Uptime[24];
     sprintf(Uptime, "1:%02dd:%02dh:%02dm:%02ds", day, hr % 24, min % 60, sec % 60);
     webSocket.broadcastTXT(Uptime);
