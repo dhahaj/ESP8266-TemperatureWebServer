@@ -235,7 +235,7 @@ void http_root() {
                "<tr width=\"250\"><td colspan=\"3\"><div style='width: 300px; overflow: auto;'>\r\n<a href=\"https://www.weatherforyou.com/weather/tx/new%20braunfels.html\" target=\"_new\">\r\n"
                "<img src=\"https://www.weatherforyou.net/fcgi-bin/hw3/hw3.cgi?config=png&forecast=zone&alt=hwizone7day5&place=new%20braunfels&state=tx&country=us&hwvbg=black&hwvtc=white&hwvdisplay=&daysonly=2&maxdays=7\" width=\"500\" height=\"200\" border=\"0\" alt=\"new%20braunfels, tx, weather forecast\"></a>\r\n"
                "</div></td></tr>\r\n</tbody></table>\r\n</body>\r\n</html>\r\n";
-  server.send ( 200, "text/html", sResponse );
+  server.send ( 200, F("text/html"), sResponse );
   stream << F("Client disconnected") << endl;;
 }
 
